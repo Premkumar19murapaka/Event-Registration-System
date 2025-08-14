@@ -1,0 +1,365 @@
+
+<!-- <!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Event Registration System</title>
+  <style>
+    :root{ --gap:12px; }
+    body{ font-family: system-ui, Arial, sans-serif; margin:0; background:#0b1220; color:#e6e9f0;}
+    header{ background:#0f172a; padding:16px; position:sticky; top:0; box-shadow:0 2px 8px rgba(0,0,0,.35);}
+    .container{ padding:16px; max-width:1100px; margin:auto; }
+    .grid{ display:grid; gap:var(--gap); grid-template-columns:1fr; }
+    @media(min-width:900px){ .grid{ grid-template-columns:420px 1fr; } }
+    .card{ background:#111827; border-radius:16px; padding:16px; box-shadow:0 6px 18px rgba(0,0,0,.35); }
+    input,select,textarea,button{ width:100%; padding:10px; border-radius:10px; border:1px solid #263042; background:#0b1220; color:#e6e9f0;}
+    .row{ display:grid; grid-template-columns:1fr 1fr; gap:var(--gap); }
+    .pill{ padding:4px 8px; border-radius:999px; background:#1f2937; font-size:.8rem; }
+    .danger{ background:#7f1d1d;} .success{ background:#064e3b;}
+    .actions{ display:flex; gap:8px; flex-wrap:wrap; }
+    table{ width:100%; border-collapse:collapse;} th,td{ padding:10px; border-bottom:1px solid #263042; text-align:left;}
+    .pagination{ display:flex; gap:8px; align-items:center; justify-content:flex-end;}
+    .hidden{ display:none; }
+  </style>
+</head>
+<body>
+  <header><h2>Event Registration System</h2></header>
+  <div class="container grid">
+    <section class="card">
+      <h3>Create Event</h3>
+      <diven
+        <div><label>Date</label><input id="evDate" type="datetime-local"></div>
+      </div>
+      <div class="row">
+        <div><label>Capacity</label><input id="evCapacity" type="number" min="1" value="50"></div>
+        <div><label>Location</label><input id="evLocation" placeholder="City Hall"></div>
+      </div>
+      <div><label>Description</label><textarea id="evDesc" rows="3"></textarea></div>
+      <div class="actions"><button id="createBtn">Create</button><span id="createMsg"></span></div>
+    </section>
+
+    <section class="card">
+      <h3>Events</h3>
+      <div class="row">
+        <div><input id="search" placeholder="Search name..."></div>
+        <div>
+          <select id="status">
+            <option value="">All</option>
+            <option value="active">Active</option>
+            <option value="cancelled">Cancelled</option>
+          </select>
+        </div>
+      </div>
+      <div class="row">
+        <div><label>From</label><input id="from" type="date"></div>
+        <div><label>To</label><input id="to" type="date"></div>
+      </div>
+      <div class="row">
+        <div>
+          <label>Sort</label>
+          <select id="sort">
+            <option value="date">Date</option>
+            <option value="name">Name</option>
+            <option value="createdAt">Created</option>
+          </select>
+        </div>
+        <div><label>Order</label><select id="order"><option>asc</option><option>desc</option></select></div>
+      </div>
+      <div class="row">
+        <div><label>Page Size</label><select id="pageSize"><option>5</option><option>10</option><option>20</option></select></div>
+        <div class="actions" style="justify-content:flex-end;"><button id="refreshBtn">Refresh</button></div>
+      </div>
+      <div style="overflow:auto; margin-top:10px;">
+        <table id="tbl">
+          <thead><tr><th>Name</th><th>Date</th><th>Capacity</th><th>Status</th><th>Actions</th></tr></thead>
+          <tbody></tbody>
+        </table>
+        <div class="pagination">
+          <button id="prev">Prev</button><span id="pageInfo"></span><button id="next">Next</button>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div id="modal" class="hidden" style="position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;">
+    <div class="card" style="max-width:420px;width:92vw;">
+      <h3 id="modalTitle">Register</h3>
+      <div><label>Name</label><input id="regName"></div>
+      <div><label>Email</label><input id="regEmail" type="email"></div>
+      <div class="actions"><button id="regSubmit">Submit</button><button id="regClose">Close</button><span id="regMsg"></span></div>
+    </div>
+  </div>
+
+  <script>
+    const API='http://localhost:3000'; let page=1,total=0,selectedEvent=null;
+    const qs=id=>document.getElementById(id); const fmtDate=s=>new Date(s).toLocaleString();
+
+    async function createEvent(){
+      qs('createMsg').textContent='';
+      const payload={
+        name:qs('evName').value.trim(),
+        date:qs('evDate').value,
+        capacity:parseInt(qs('evCapacity').value,10),
+        location:qs('evLocation').value.trim(),
+        description:qs('evDesc').value.trim()
+      };
+      const res=await fetch(`${API}/events`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+      const data=await res.json(); if(!res.ok){qs('createMsg').textContent=data.error||'Error';} else{qs('createMsg').textContent='Created ✔'; load();}
+    }
+
+    async function load(){
+      const params=new URLSearchParams({q:qs('search').value.trim(),status:qs('status').value,from:qs('from').value,to:qs('to').value,sort:qs('sort').value,order:qs('order').value,page,pageSize:qs('pageSize').value});
+      const res=await fetch(`${API}/events?`+params.toString()); const j=await res.json(); total=j.total;
+      const tbody=document.querySelector('#tbl tbody'); tbody.innerHTML='';
+      j.items.forEach(ev=>{
+        const tr=document.createElement('tr');
+        const status=ev.cancelled?'<span class="pill danger">Cancelled</span>':'<span class="pill success">Active</span>';
+        tr.innerHTML=`<td>${ev.name}</td><td>${fmtDate(ev.date)}</td><td>${ev.capacity}</td><td>${status}</td>
+          <td class="actions">
+            <button ${ev.cancelled?'disabled':''} onclick="openRegister(${ev.id}, '${ev.name.replace(/'/g,"\'")}')">Register</button>
+            <button ${ev.cancelled?'disabled':''} onclick="cancelEvent(${ev.id})">Cancel</button>
+            <button onclick="viewStats(${ev.id})">Stats</button>
+          </td>`;
+        tbody.appendChild(tr);
+      });
+      qs('pageInfo').textContent=`Page ${j.page} • ${j.items.length} of ${j.total}`;
+    }
+
+    async function cancelEvent(id){
+      if(!confirm('Cancel this event?')) return;
+      const res=await fetch(`${API}/events/${id}/cancel`,{method:'POST'}); const j=await res.json(); if(!res.ok) alert(j.error); load();
+    }
+    async function viewStats(id){ const res=await fetch(`${API}/events/${id}/stats`); const s=await res.json(); alert(`Capacity: ${s.capacity}\nRegistered: ${s.totalRegistrations}\nRemaining: ${s.remaining}\nFull: ${s.isFull}\nCancelled: ${s.cancelled}`); }
+
+    function openRegister(id,name){ selectedEvent=id; qs('modalTitle').textContent='Register for '+name; qs('regMsg').textContent=''; qs('modal').classList.remove('hidden'); }
+    function closeRegister(){ qs('modal').classList.add('hidden'); }
+    async function submitRegister(){
+      const payload={name:qs('regName').value.trim(), email:qs('regEmail').value.trim()};
+      const res=await fetch(`${API}/events/${selectedEvent}/register`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+      const j=await res.json(); if(!res.ok){qs('regMsg').textContent=j.error;} else {qs('regMsg').textContent='Registered ✔'; setTimeout(()=>closeRegister(),800);}
+    }
+
+    qs('createBtn').onclick=createEvent; qs('refreshBtn').onclick=()=>{page=1;load();};
+    qs('prev').onclick=()=>{ if(page>1){page--; load();} };
+    qs('next').onclick=()=>{ const pageSize=parseInt(qs('pageSize').value,10); if(page*pageSize<total){page++; load();} };
+    ['search','status','from','to','sort','order','pageSize'].forEach(id=>qs(id).addEventListener('change',()=>{page=1; load();}));
+    qs('regClose').onclick=closeRegister; qs('regSubmit').onclick=submitRegister; load();
+  </script>
+</body>
+</html> -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Event Registration System</title>
+  <style>
+    :root { --gap: 12px; }
+    body { font-family: system-ui, Arial, sans-serif; margin: 0; background: #0b1220; color: #e6e9f0; }
+    header { background: #0f172a; padding: 16px; position: sticky; top: 0; box-shadow: 0 2px 8px rgba(0,0,0,.35); }
+    .container { padding: 16px; max-width: 1100px; margin: auto; }
+    .grid { display: grid; gap: var(--gap); grid-template-columns: 1fr; }
+    @media (min-width: 900px) { .grid { grid-template-columns: 420px 1fr; } }
+    .card { background: #111827; border-radius: 16px; padding: 16px; box-shadow: 0 6px 18px rgba(0,0,0,.35); }
+    input, select, textarea, button { width: 100%; padding: 10px; border-radius: 10px; border: 1px solid #263042; background: #0b1220; color: #e6e9f0; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--gap); }
+    .pill { padding: 4px 8px; border-radius: 999px; background: #1f2937; font-size: .8rem; }
+    .danger { background: #7f1d1d; }
+    .success { background: #064e3b; }
+    .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 10px; border-bottom: 1px solid #263042; text-align: left; }
+    .pagination { display: flex; gap: 8px; align-items: center; justify-content: flex-end; }
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+  <header><h2>Event Registration System</h2></header>
+  <div class="container grid">
+    <section class="card">
+      <h3>Create Event</h3>
+      <div><label>Name</label><input id="evName" placeholder="Event Name"></div>
+      <div><label>Date</label><input id="evDate" type="datetime-local"></div>
+      <div class="row">
+        <div><label>Capacity</label><input id="evCapacity" type="number" min="1" value="50"></div>
+        <div><label>Location</label><input id="evLocation" placeholder="City Hall"></div>
+      </div>
+      <div><label>Description</label><textarea id="evDesc" rows="3"></textarea></div>
+      <div class="actions"><button id="createBtn">Create</button><span id="createMsg"></span></div>
+    </section>
+
+    <section class="card">
+      <h3>Events</h3>
+      <div class="row">
+        <div><input id="search" placeholder="Search name..."></div>
+        <div>
+          <select id="status">
+            <option value="">All</option>
+            <option value="active">Active</option>
+            <option value="cancelled">Cancelled</option>
+          </select>
+        </div>
+      </div>
+      <div class="row">
+        <div><label>From</label><input id="from" type="date"></div>
+        <div><label>To</label><input id="to" type="date"></div>
+      </div>
+      <div class="row">
+        <div>
+          <label>Sort</label>
+          <select id="sort">
+            <option value="date">Date</option>
+            <option value="name">Name</option>
+            <option value="createdAt">Created</option>
+          </select>
+        </div>
+        <div><label>Order</label><select id="order"><option>asc</option><option>desc</option></select></div>
+      </div>
+      <div class="row">
+        <div><label>Page Size</label><select id="pageSize"><option>5</option><option>10</option><option>20</option></select></div>
+        <div class="actions" style="justify-content:flex-end;"><button id="refreshBtn">Refresh</button></div>
+      </div>
+      <div style="overflow:auto; margin-top:10px;">
+        <table id="tbl">
+          <thead><tr><th>Name</th><th>Date</th><th>Capacity</th><th>Status</th><th>Actions</th></tr></thead>
+          <tbody></tbody>
+        </table>
+        <div class="pagination">
+          <button id="prev">Prev</button><span id="pageInfo"></span><button id="next">Next</button>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div id="modal" class="hidden" style="position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;">
+    <div class="card" style="max-width:420px;width:92vw;">
+      <h3 id="modalTitle">Register</h3>
+      <div><label>Name</label><input id="regName"></div>
+      <div><label>Email</label><input id="regEmail" type="email"></div>
+      <div class="actions"><button id="regSubmit">Submit</button><button id="regClose">Close</button><span id="regMsg"></span></div>
+    </div>
+  </div>
+
+  <script>
+    const API = 'http://localhost:3000';
+    let page = 1, total = 0, selectedEvent = null;
+    const qs = id => document.getElementById(id);
+    const fmtDate = s => new Date(s).toLocaleString();
+
+    async function createEvent() {
+      qs('createMsg').textContent = '';
+      const payload = {
+        name: qs('evName').value.trim(),
+        date: qs('evDate').value,
+        capacity: parseInt(qs('evCapacity').value, 10),
+        location: qs('evLocation').value.trim(),
+        description: qs('evDesc').value.trim()
+      };
+      const res = await fetch(`${API}/events`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        qs('createMsg').textContent = data.error || 'Error';
+      } else {
+        qs('createMsg').textContent = 'Created ✔';
+        load();
+      }
+    }
+
+    async function load() {
+      const params = new URLSearchParams({
+        q: qs('search').value.trim(),
+        status: qs('status').value,
+        from: qs('from').value,
+        to: qs('to').value,
+        sort: qs('sort').value,
+        order: qs('order').value,
+        page,
+        pageSize: qs('pageSize').value
+      });
+      const res = await fetch(`${API}/events?` + params.toString());
+      const j = await res.json();
+      total = j.total;
+      const tbody = document.querySelector('#tbl tbody');
+      tbody.innerHTML = '';
+      j.items.forEach(ev => {
+        const tr = document.createElement('tr');
+        const status = ev.cancelled ? '<span class="pill danger">Cancelled</span>' : '<span class="pill success">Active</span>';
+        tr.innerHTML = `
+          <td>${ev.name}</td>
+          <td>${fmtDate(ev.date)}</td>
+          <td>${ev.capacity}</td>
+          <td>${status}</td>
+          <td class="actions">
+            <button ${ev.cancelled ? 'disabled' : ''} onclick="openRegister(${ev.id}, '${ev.name.replace(/'/g,"\\'")}')">Register</button>
+            <button ${ev.cancelled ? 'disabled' : ''} onclick="cancelEvent(${ev.id})">Cancel</button>
+            <button onclick="viewStats(${ev.id})">Stats</button>
+          </td>`;
+        tbody.appendChild(tr);
+      });
+      qs('pageInfo').textContent = `Page ${j.page} • ${j.items.length} of ${j.total}`;
+    }
+
+    async function cancelEvent(id) {
+      if (!confirm('Cancel this event?')) return;
+      const res = await fetch(`${API}/events/${id}/cancel`, { method: 'POST' });
+      const j = await res.json();
+      if (!res.ok) alert(j.error);
+      load();
+    }
+
+    async function viewStats(id) {
+      const res = await fetch(`${API}/events/${id}/stats`);
+      const s = await res.json();
+      alert(`Capacity: ${s.capacity}\nRegistered: ${s.totalRegistrations}\nRemaining: ${s.remaining}\nFull: ${s.isFull}\nCancelled: ${s.cancelled}`);
+    }
+
+    function openRegister(id, name) {
+      selectedEvent = id;
+      qs('modalTitle').textContent = 'Register for ' + name;
+      qs('regMsg').textContent = '';
+      qs('modal').classList.remove('hidden');
+    }
+
+    function closeRegister() {
+      qs('modal').classList.add('hidden');
+    }
+
+    async function submitRegister() {
+      const payload = {
+        name: qs('regName').value.trim(),
+        email: qs('regEmail').value.trim()
+      };
+      const res = await fetch(`${API}/events/${selectedEvent}/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const j = await res.json();
+      if (!res.ok) {
+        qs('regMsg').textContent = j.error;
+      } else {
+        qs('regMsg').textContent = 'Registered ✔';
+        setTimeout(() => closeRegister(), 800);
+      }
+    }
+
+    qs('createBtn').onclick = createEvent;
+    qs('refreshBtn').onclick = () => { page = 1; load(); };
+    qs('prev').onclick = () => { if (page > 1) { page--; load(); } };
+    qs('next').onclick = () => {
+      const pageSize = parseInt(qs('pageSize').value, 10);
+      if (page * pageSize < total) { page++; 
+        load(); }
+    };
+    ['search','status','from','to','sort','order','pageSize'].forEach(id => qs(id).addEventListener('change', () => { page = 1; load(); }));
+    qs('regClose').onclick = closeRegister;
+    qs('regSubmit').onclick = submitRegister;
+    load();
+  </script>
+</body>
+</html>
